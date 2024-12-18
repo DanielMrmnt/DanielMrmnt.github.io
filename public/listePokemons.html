@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Liste des Pokémon</title>
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+            rel="stylesheet">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 20px;
+                background-color: #f4f4f4;
+                border-bottom: 1px solid #ddd;
+            }
+            header h1 {
+                margin: 0;
+            }
+            #menu button {
+                margin: 0 5px;
+                padding: 10px 15px;
+                border: none;
+                background-color: #007BFF;
+                color: white;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            #menu button:hover {
+                background-color: #0056b3;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f9f9f9;
+            }
+            img {
+                max-width: 100px;
+                height: auto;
+            }
+            .container {
+                padding: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>Liste des Pokémon</h1>
+            <div id="menu">
+                <button onclick="window.location.reload()">Liste
+                    Pokémons</button>
+            </div>
+        </header>
+        <div class="container">
+            <div id="listPokemons"></div>
+        </div>
+
+        <script>
+            const urlApi = "https://tyradex.app/api/v1/pokemon";
+            const listePokemons = document.getElementById("listPokemons");
+
+            
+            const storageKey = "pokemonCounts";
+            const expirationKey = "pokemonCountsExpiration";
+            const expirationTime = 5 * 60 * 1000;
+
+            function generateCounts(pokemonList) {
+                const counts = {};
+                pokemonList.forEach(pokemon => {
+                    counts[pokemon.pokedex_id] = Math.floor(Math.random() * 11);
+                });
+                return counts;
+            }
+
+            function getCounts(pokemonList) {
+                const savedCounts = localStorage.getItem(storageKey);
+                const savedExpiration = localStorage.getItem(expirationKey);
+
+                if (savedCounts && savedExpiration) {
+                    const now = Date.now();
+                    if (now - parseInt(savedExpiration, 10) < expirationTime) {
+                        return JSON.parse(savedCounts);
+                    }
+                }
+
+                const newCounts = generateCounts(pokemonList);
+                localStorage.setItem(storageKey, JSON.stringify(newCounts));
+                localStorage.setItem(expirationKey, Date.now().toString());
+                return newCounts;
+            }
+
+            async function getPokemon() {
+                try {
+                    const response = await fetch(urlApi);
+                    if (!response.ok) {
+                        throw new Error("La réponse de l'API n'est pas correcte !");
+                    }
+                    const data = await response.json();
+                    listePokemons.innerHTML = '';
+
+                    const counts = getCounts(data);
+
+                    // Création du tableau et des titres
+                    const tableauPokemon = document.createElement("table");
+                    const ligneTitre = document.createElement("tr");
+
+                    const titres = ["Pokedex ID", "Nom", "Image", "Nombre restant", "Actions"];
+                    titres.forEach(titreTexte => {
+                        const titre = document.createElement("th");
+                        titre.textContent = titreTexte;
+                        ligneTitre.appendChild(titre);
+                    });
+
+                    tableauPokemon.appendChild(ligneTitre);
+
+                    // Remplissage du tableau
+                    data.forEach(pokemon => {
+                        // Vérification des données
+                        const { pokedex_id, name, sprites } = pokemon;
+                        if (!pokedex_id || !name?.fr || !sprites?.regular) return;
+
+                        const ligne = document.createElement("tr");
+
+                        // ID
+                        const idCell = document.createElement("td");
+                        idCell.textContent = pokedex_id;
+                        ligne.appendChild(idCell);
+
+                        // Nom
+                        const nomCell = document.createElement("td");
+                        nomCell.textContent = name.fr;
+                        ligne.appendChild(nomCell);
+
+                        // Image
+                        const imgCell = document.createElement("td");
+                        const imgPokemon = document.createElement("img");
+                        imgPokemon.src = sprites.regular;
+                        imgPokemon.alt = `Image de ${name.fr}`;
+                        imgCell.appendChild(imgPokemon);
+                        ligne.appendChild(imgCell);
+
+                        // Nombre restant
+                        const nombresCell = document.createElement("td");
+                        let nombreRestant = counts[pokedex_id];
+                        nombresCell.textContent = nombreRestant;
+                        ligne.appendChild(nombresCell);
+
+                        // Bouton d'action
+                        const actionCell = document.createElement("td");
+                        const btnRechercher = document.createElement("button");
+                        btnRechercher.textContent = "Voir sur la carte";
+                        btnRechercher.addEventListener("click", () => {
+                        if (nombreRestant > 0) {
+                            // Redirige vers la page de la carte avec l'ID du Pokémon
+                            window.location.href = `index.html?id=${pokedex_id}`;
+                            nombreRestant--;
+                            nombresCell.textContent = nombreRestant;
+                        
+                            // Met à jour les données dans le localStorage
+                            counts[pokedex_id] = nombreRestant;
+                            localStorage.setItem(storageKey, JSON.stringify(counts));
+                        } else {
+                            alert("Nombre restant insuffisant !");
+                        }
+                    });
+                        actionCell.appendChild(btnRechercher);
+                        ligne.appendChild(actionCell);
+
+                        tableauPokemon.appendChild(ligne);
+                    });
+
+                    listePokemons.appendChild(tableauPokemon);
+                } catch (error) {
+                    console.error("Erreur :", error);
+                }
+            }
+
+            // Charger la liste des Pokémon
+            document.addEventListener("DOMContentLoaded", getPokemon);
+        </script>
+    </body>
+</html>

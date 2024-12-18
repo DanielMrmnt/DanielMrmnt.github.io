@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Chercher Pokémons</title>
+        <link rel="manifest" href="../manifest.json">
+        <link rel="stylesheet"
+            href="https://unpkg.com/leaflet/dist/leaflet.css" />
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+            rel="stylesheet">
+        <style>
+            #map {
+                height: 90vh;
+                margin-top: 20px;
+            }
+            body {
+                font-family: Arial, sans-serif;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Chercher Pokémons</h1>
+        <div id="map"></div>
+        <div id="menu">
+            <button onclick="window.location.reload()">Carte</button>
+            <a href="listePokemons.html"><button>Liste Pokémons</button></a>
+        </div>
+
+        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+        <script>
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./service-worker.js').then(function(registration) {
+                    console.log('Service Worker enregistré avec succès:', registration);
+                }).catch(function(error) {
+                    console.log('Enregistrement du Service Worker échoué:', error);
+                });
+            }
+        </script>
+        <script>
+            const storagePokemonsMapKey = "pokemonsMap";
+            const storagePokemonsGotKey = "pokemonsGot";
+
+            const redIcon = L.icon({
+                iconUrl: './icons/client.png',
+                iconSize: [30, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+            });
+
+            const map = L.map('map');
+
+            L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: 'Données cartographiques © OpenStreetMap contributors'
+            }).addTo(map);
+
+            function centrerCarteSurUtilisateur(latitude, longitude) {
+                map.setView([latitude, longitude], 13);
+                L.marker([latitude, longitude], { icon: redIcon })
+                    .addTo(map)
+                    .bindPopup('Vous êtes ici')
+                    .openPopup();
+            }
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        centrerCarteSurUtilisateur(latitude, longitude);
+                    },
+                    (error) => {
+                        console.error('Erreur de géolocalisation', error);
+                        alert("Impossible de récupérer votre position. La carte affichera une vue par défaut.");
+                        map.setView([46.2044, 6.1432], 5);
+                        L.marker([latitude, longitude], { icon: redIcon })
+                            .addTo(map)
+                            .bindPopup('Vous êtes ici')
+                            .openPopup();
+
+                    }
+                );
+            } else {
+                alert("La géolocalisation n'est pas prise en charge par votre navigateur.");
+                map.setView([46.2044, 6.1432], 5);
+            }
+
+            function genererCoordonneesAleatoires(nombre = 5) {
+                const coordonnees = [];
+                for (let i = 0; i < nombre; i++) {
+                    const lat = 45 + Math.random() * 10;
+                    const lng = 5 + Math.random() * 10;
+                    coordonnees.push({ lat, lng });
+                }
+                return coordonnees;
+            }
+
+            function sauvegarderPokemonSurCarte(pokemonId, locations) {
+                const pokemonsMap = JSON.parse(localStorage.getItem(storagePokemonsMapKey)) || {};
+                pokemonsMap[pokemonId] = locations;
+                localStorage.setItem(storagePokemonsMapKey, JSON.stringify(pokemonsMap));
+            }
+
+            function attraperPokemon(pokemonId, lat, lng) {
+                const pokemonsAttrapes = JSON.parse(localStorage.getItem(storagePokemonsGotKey)) || [];
+
+                // Vérifier si le Pokémon a déjà été attrapé
+                if (pokemonsAttrapes.find(p => p.id === pokemonId && p.lat === lat && p.lng === lng)) {
+                    alert("Vous avez déjà attrapé ce Pokémon !");
+                    return;
+                }
+
+                // Ajouter le Pokémon à la liste des attrapés
+                pokemonsAttrapes.push({ id: pokemonId, lat, lng });
+                localStorage.setItem(storagePokemonsGotKey, JSON.stringify(pokemonsAttrapes));
+
+                // Retirer le marqueur de la carte
+                map.eachLayer((layer) => {
+                    if (layer instanceof L.Marker && layer.getLatLng().lat === lat && layer.getLatLng().lng === lng) {
+                        map.removeLayer(layer);
+                    }
+                });
+
+                alert("Félicitations, vous avez attrapé ce Pokémon !");
+            }
+
+            async function afficherPokemonSurCarte() {
+                const params = new URLSearchParams(window.location.search);
+                const pokemonId = params.get("id");
+
+                if (!pokemonId) {
+                    alert("Aucun Pokémon sélectionné !");
+                    return;
+                }
+
+                const appearances = genererCoordonneesAleatoires();
+                sauvegarderPokemonSurCarte(pokemonId, appearances);
+
+                const pokemonsMap = JSON.parse(localStorage.getItem(storagePokemonsMapKey)) || {};
+
+                for (const [id, locations] of Object.entries(pokemonsMap)) {
+                    const urlApi = `https://tyradex.app/api/v1/pokemon/${id}`;
+                    try {
+                        const response = await fetch(urlApi);
+                        if (!response.ok) throw new Error("Erreur API");
+                        const data = await response.json();
+
+                        locations.forEach((location, index) => {
+                            const iconPokemon = L.icon({
+                                iconUrl: data.sprites.regular,
+                                iconSize: [40, 40],
+                                iconAnchor: [15, 15],
+                                popupAnchor: [0, -15],
+                            });
+
+                            const marker = L.marker([location.lat, location.lng], { icon: iconPokemon }).addTo(map);
+                            marker.bindPopup(`
+                                <div>
+                                    <p>Apparition de ${data.name?.fr || "Pokémon inconnu"}</p>
+                                    <button onclick="attraperPokemon('${id}', ${location.lat}, ${location.lng})">
+                                        Attraper ce Pokémon
+                                    </button>
+                                </div>
+                            `);
+
+                            // Centrer sur la première apparition
+                            if (index === 0) {
+                                map.setView([location.lat, location.lng], 13);
+                            }
+                        });
+                    } catch (error) {
+                        console.error(`Erreur pour le Pokémon ${id}:`, error);
+                    }
+                }
+            }
+
+            afficherPokemonSurCarte();
+        </script>
+    </body>
+</html>
